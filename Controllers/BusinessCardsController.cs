@@ -1,8 +1,11 @@
 ﻿using BusinessCardManagerAPI.Data;
-using BusinessCardManagerAPI.Data.Models;
 using BusinessCardManagerAPI.DTOs;
+using BusinessCardManagerAPI.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.Net;
+using System.Text;
+using System.Xml.Linq;
 
 namespace BusinessCardManagerAPI.Controllers
 {
@@ -11,10 +14,12 @@ namespace BusinessCardManagerAPI.Controllers
     public class BusinessCardsController : ControllerBase
     {
         private readonly BusinessCardDbContext _context;
+        private readonly IBusinessCardService _businessCardService;
 
-        public BusinessCardsController(BusinessCardDbContext context)
+        public BusinessCardsController(BusinessCardDbContext context, IBusinessCardService businessCardService)
         {
             _context = context;
+            _businessCardService = businessCardService;
         }
 
         [HttpGet]
@@ -22,29 +27,22 @@ namespace BusinessCardManagerAPI.Controllers
         {
             try
             {
-                if (_context.BusinessCards == null)
+                var result = await _businessCardService.GetAllBusinessCardsAsync();
+
+                switch (result.StatusCode)
                 {
-                    return Problem("Entity set 'DbContext.BusinessCards' is null.");
+                    case HttpStatusCode.OK:
+                        return Ok(new { result.BusinessCards });
+
+                    case HttpStatusCode.NotFound:
+                        return NotFound(new { Message = "Business Cards not found" });
+
+                    case HttpStatusCode.InternalServerError:
+                        return Problem("Entity set 'DbContext.BusinessCards' is null.", statusCode: 500);
+
+                    default:
+                        return Problem("An error occurred when retreving the data");
                 }
-
-                var businessCards = await _context.BusinessCards.Select(bc => new
-                {
-                    bc.Id,
-                    bc.Name,
-                    bc.Gender,
-                    bc.DateOfBirth,
-                    bc.Email,
-                    bc.Phone,
-                    bc.Address,
-                    bc.PhotoBase64
-                }).ToListAsync();
-
-                if (businessCards == null)
-                {
-                    return NotFound(new { Message = "Business Cards not found" });
-                }
-
-                return Ok(new { Message = "Successfully retreve business cards", BusinessCards = businessCards });
             }
             catch (Exception e)
             {
@@ -57,69 +55,26 @@ namespace BusinessCardManagerAPI.Controllers
         {
             try
             {
-                if (_context.BusinessCards == null)
+                var result = await _businessCardService.GetBusinessCardAsync(id);
+
+                switch (result.StatusCode)
                 {
-                    return Problem("Entity set 'DbContext.BusinessCards' is null.");
+                    case HttpStatusCode.OK:
+                        return Ok(new { result.BusinessCard });
+
+                    case HttpStatusCode.NotFound:
+                        return NotFound(new { Message = "Business Card not found" });
+
+                    case HttpStatusCode.InternalServerError:
+                        return Problem("Entity set 'DbContext.BusinessCards' is null.", statusCode: 500);
+
+                    default:
+                        return Problem("An error occurred when retreving the data");
                 }
-
-                var businessCard = await _context.BusinessCards.FindAsync(id);
-                if (businessCard == null)
-                {
-                    return NotFound(new { Message = "Business card not found" });
-                }
-
-                var businessCardJson = new
-                {
-                    businessCard.Id,
-                    businessCard.Name,
-                    businessCard.Gender,
-                    businessCard.DateOfBirth,
-                    businessCard.Email,
-                    businessCard.Phone,
-                    businessCard.Address,
-                    businessCard.PhotoBase64
-                };
-
-                return Ok(new { Message = "Successfully retreve business card", BusinessCard = businessCardJson });
             }
             catch (Exception e)
             {
                 return BadRequest(new { Message = "An error occurred when retreving the data", ErrorMessage = $"{e}" });
-            }
-        }
-
-
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutBusinessCard(string id, BusinessCardDTO businessCardDTO)
-        {
-            try
-            {
-                if (_context.BusinessCards == null)
-                {
-                    return Problem("Entity set 'DbContext.BusinessCards' is null.");
-                }
-
-                var businessCard = await _context.BusinessCards.FindAsync(id);
-                if (businessCard == null)
-                {
-                    return NotFound(new { Message = "Business card not found" });
-                }
-
-                businessCard.Name = businessCardDTO.Name;
-                businessCard.Gender = businessCardDTO.Gender;
-                businessCard.DateOfBirth = businessCardDTO.DateOfBirth;
-                businessCard.Email = businessCardDTO.Email;
-                businessCard.Phone = businessCardDTO.Phone;
-                businessCard.Address = businessCardDTO.Address;
-                businessCard.PhotoBase64 = businessCardDTO.PhotoBase64;
-
-                await _context.SaveChangesAsync();
-
-                return Ok(new { Message = "Updated Successfully" });
-            }
-            catch (Exception e)
-            {
-                return BadRequest(new { Message = "An error occurred when deleting", ErrorMessage = $"{e}" });
             }
         }
 
@@ -128,26 +83,19 @@ namespace BusinessCardManagerAPI.Controllers
         {
             try
             {
-                if (_context.BusinessCards == null)
+                var result = await _businessCardService.CreateBusinessCardAsync(businessCardDTO);
+
+                switch (result.StatusCode)
                 {
-                    return Problem("Entity set 'DbContext.BusinessCards' is null.");
+                    case HttpStatusCode.OK:
+                        return Ok(new { Message = "Successfully create new business card", result.Id });
+
+                    case HttpStatusCode.InternalServerError:
+                        return Problem("Entity set 'DbContext.BusinessCards' is null.", statusCode: 500);
+
+                    default:
+                        return Problem("Not added correctly");
                 }
-
-                var businessCard = new BusinessCard()
-                {
-                    Name = businessCardDTO.Name,
-                    Gender = businessCardDTO.Gender,
-                    DateOfBirth = businessCardDTO.DateOfBirth,
-                    Email = businessCardDTO.Email,
-                    Phone = businessCardDTO.Phone,
-                    Address = businessCardDTO.Address,
-                    PhotoBase64 = businessCardDTO.PhotoBase64
-                };
-
-                await _context.BusinessCards.AddAsync(businessCard);
-                await _context.SaveChangesAsync();
-
-                return Ok(new { Message = "Successfully create new business card", BusinessCardId = businessCard.Id });
             }
             catch (Exception e)
             {
@@ -160,26 +108,147 @@ namespace BusinessCardManagerAPI.Controllers
         {
             try
             {
-                if (_context.BusinessCards == null)
+                var result = await _businessCardService.DeleteBusinessCardAsync(id);
+                switch (result)
                 {
-                    return Problem("Entity set 'DbContext.BusinessCards' is null.");
+                    case HttpStatusCode.OK:
+                        return Ok(new { Message = "Deleted Successfully" });
+
+                    case HttpStatusCode.NotFound:
+                        return NotFound(new { Message = "Business card not found" });
+
+                    case HttpStatusCode.InternalServerError:
+                        return Problem("Entity set 'DbContext.BusinessCards' is null.", statusCode: 500);
+
+                    default:
+                        return Problem("Not deleted correctly");
                 }
-
-                var businessCard = await _context.BusinessCards.FindAsync(id);
-                if (businessCard == null)
-                {
-                    return NotFound(new { Message = "Business card not found" });
-                }
-
-                _context.BusinessCards.Remove(businessCard);
-                await _context.SaveChangesAsync();
-
-                return Ok(new { Message = "Deleted Successfully" });
             }
             catch (Exception e)
             {
                 return BadRequest(new { Message = "An error occurred when deleting", ErrorMessage = $"{e}" });
             }
         }
+
+        [HttpPost("import/xml")]
+        public async Task<IActionResult> ImportXmlAsync(IFormFile file)
+        {
+            try
+            {
+                var result = await _businessCardService.ImportXmlAsync(file);
+                switch (result)
+                {
+                    case HttpStatusCode.OK:
+                        return Ok(new { Message = "Business card imported successfully from XML." });
+
+                    case HttpStatusCode.BadRequest:
+                        return BadRequest(new { Message = "No file provided or the file is empty." });
+
+                    case HttpStatusCode.InternalServerError:
+                        return Problem("Entity set 'DbContext.BusinessCards' is null.", statusCode: 500);
+
+                    default:
+                        return Problem("It was not imported correctly");
+                }
+            }
+            catch (Exception e)
+            {
+                return BadRequest(new { Message = "There was a problem reading the file or a problem occurred.", ErrorMessage = $"{e}" });
+            }
+        }
+
+        // Export a single Business Card to XML based on the ID
+        [HttpGet("export/xml/{id}")]
+        public async Task<IActionResult> ExportBusinessCardToXml(string id)
+        {
+            try
+            {
+                var result = await _businessCardService.ExportToXmlAsync(id);
+                switch (result.StatusCode)
+                {
+                    case HttpStatusCode.OK:
+                        if (string.IsNullOrEmpty(result.XMLText))
+                        {
+                            return Problem("It was not exported correctly");
+                        }
+                        var fileName = $"BusinessCard_{id}.xml";
+                        return File(Encoding.UTF8.GetBytes(result.XMLText), "application/xml", fileName);
+
+                    case HttpStatusCode.NotFound:
+                        return NotFound(new { Message = $"Business card with ID {id} not found." });
+
+                    case HttpStatusCode.InternalServerError:
+                        return Problem("Entity set 'DbContext.BusinessCards' is null.", statusCode: 500);
+
+                    default:
+                        return Problem("It was not exported correctly");
+                }
+            }
+            catch (Exception e)
+            {
+                return BadRequest(new { Message = "A problem occurred while exporting this xml file.", ErrorMessage = $"{e}" });
+            }
+        }
+
+        // Import Business Card from CSV
+        [HttpPost("import/csv")]
+        public async Task<IActionResult> ImportCsvAsync(IFormFile file)
+        {
+            try
+            {
+                var result = await _businessCardService.ImportCsvAsync(file);
+                switch (result)
+                {
+                    case HttpStatusCode.OK:
+                        return Ok(new { Message = "Business card(s) imported successfully from CSV." });
+
+                    case HttpStatusCode.BadRequest:
+                        return BadRequest(new { Message = "No file provided or the file is empty, or CSV format is invalid." });
+
+                    case HttpStatusCode.InternalServerError:
+                        return Problem("Entity set 'DbContext.BusinessCards' is null.", statusCode: 500);
+
+                    default:
+                        return Problem("It was not imported correctly");
+                }
+            }
+            catch (Exception e)
+            {
+                return BadRequest(new { Message = "There was a problem reading the file or a problem occurred.", ErrorMessage = $"{e}" });
+            }
+        }
+
+        // Export a single Business Card to CSV based on the ID
+        [HttpGet("export/csv/{id}")]
+        public async Task<IActionResult> ExportBusinessCardToCsv(string id)
+        {
+            try
+            {
+                var result = await _businessCardService.ExportToCsvAsync(id);
+                switch (result.StatusCode)
+                {
+                    case HttpStatusCode.OK:
+                        if (string.IsNullOrEmpty(result.CsvText))
+                        {
+                            return Problem("It was not exported correctly");
+                        }
+                        var fileName = $"BusinessCard_{id}.csv";
+                        return File(Encoding.UTF8.GetBytes(result.CsvText), "text/csv", fileName);
+
+                    case HttpStatusCode.NotFound:
+                        return NotFound(new { Message = $"Business card with ID {id} not found." });
+
+                    case HttpStatusCode.InternalServerError:
+                        return Problem("Entity set 'DbContext.BusinessCards' is null.", statusCode: 500);
+
+                    default:
+                        return Problem("It was not exported correctly");
+                }
+            }
+            catch (Exception e)
+            {
+                return BadRequest(new { Message = "A problem occurred while exporting this CSV file.", ErrorMessage = $"{e}" });
+            }
+        } 
     }
 }
