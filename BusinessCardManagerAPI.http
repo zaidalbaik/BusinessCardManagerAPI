@@ -1,0 +1,6 @@
+@BusinessCardManagerAPI_HostAddress = http://localhost:5277
+
+GET {{BusinessCardManagerAPI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
